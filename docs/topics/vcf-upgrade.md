@@ -38,7 +38,8 @@ saltext.vcf:
 All execution functions accept `profile=<name>` to select the existing
 `saltext.vcf:profiles:<name>:sddc_manager` connection. Upgrade settings remain
 under the common `saltext.vcf:vcf_upgrade` key. The checkpoint defaults to
-`<Salt cachedir>/vcf-upgrade.json`; use one shared checkpoint for concurrent
+`<Salt cachedir>/<host>-<component_type>-<target_build>.json` (host from the SDDC Manager
+connection; a sequence joins its component types with `+`); use one shared checkpoint for concurrent
 calls concerning the same upgrade. Do not mix standalone and ported workers.
 
 ## Discover, preview, and execute

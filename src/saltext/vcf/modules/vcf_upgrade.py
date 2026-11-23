@@ -1,6 +1,8 @@
 """VCF upgrades through SDDC Manager. Configure ``saltext.vcf:sddc_manager`` and ``saltext.vcf:vcf_upgrade`` pillar."""
 
 import logging
+import re
+from urllib.parse import urlsplit
 
 from saltext.vcf.utils.vcf_upgrade_orchestrator import VcfUpgradeOrchestrator
 from saltext.vcf.utils.vcf_upgrade_transport import CommandExecutionError
@@ -39,13 +41,28 @@ def _sync_depot_enabled(cfg):
     )
 
 
-def _orch(checkpoint_file=None, **kwargs):
+def _safe(value):
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._") or "unknown"
+
+
+def _default_checkpoint(provider, component_type, target_build):
+    """``<cachedir>/<host>-<component_type>-<target_build>.json`` for this upgrade."""
+    cachedir = __opts__.get("cachedir", "/var/cache/salt/minion")
+    if not (component_type and target_build):
+        return cachedir + "/vcf-upgrade.json"
+    host = urlsplit(provider.client.base_url).hostname
+    name = "-".join(_safe(part) for part in (host, component_type, target_build))
+    return f"{cachedir}/{name}.json"
+
+
+def _orch(checkpoint_file=None, component_type=None, target_build=None, **kwargs):
+    provider = _provider(**kwargs)
     path = (
         checkpoint_file
         or _u().get("checkpoint_file")
-        or (__opts__.get("cachedir", "/var/cache/salt/minion") + "/vcf-upgrade.json")
+        or _default_checkpoint(provider, component_type, target_build)
     )
-    return VcfUpgradeOrchestrator(_provider(**kwargs), log, path)
+    return VcfUpgradeOrchestrator(provider, log, path)
 
 
 def list_target_versions(
@@ -156,9 +173,10 @@ def _single(
         ),
         "scheduled_timestamp": scheduled_timestamp or cfg.get("scheduled_timestamp"),
     }
-    return _orch(checkpoint_file, **kwargs).sequence(
+    target = target_version or cfg.get("target_build") or cfg.get("target_version")
+    return _orch(checkpoint_file, spec["type"], target, **kwargs).sequence(
         [spec],
-        target_version or cfg.get("target_build") or cfg.get("target_version"),
+        target,
         domain_id or cfg.get("domain_id"),
         cfg.get("lifecycle"),
         dry_run=dry_run,
@@ -341,9 +359,14 @@ def run_sequence(
     """
     cfg = _u()
     sequence = components if components is not None else cfg.get("sequence")
-    return _orch(checkpoint_file, **kwargs).sequence(
+    target = target_version or cfg.get("target_build") or cfg.get("target_version")
+    types = "+".join(
+        str(item if isinstance(item, str) else item.get("type", "")).upper()
+        for item in sequence or []
+    )
+    return _orch(checkpoint_file, types, target, **kwargs).sequence(
         sequence,
-        target_version or cfg.get("target_build") or cfg.get("target_version"),
+        target,
         domain_id or cfg.get("domain_id"),
         cfg.get("lifecycle"),
         dry_run,

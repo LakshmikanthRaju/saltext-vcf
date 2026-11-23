@@ -1191,3 +1191,20 @@ def test_sequence_does_not_sync_in_dry_run_or_when_disabled(workflow):
 )
 def test_depot_sync_enabled_only_for_online_depots(depot, expected):
     assert execution._sync_depot_enabled({"depot": depot}) is expected
+
+
+def test_default_checkpoint_name_uses_host_component_and_target(monkeypatch):
+    opts = {"cachedir": "/cache", "pillar": {}}
+    monkeypatch.setattr(execution, "__opts__", opts, raising=False)
+    provider = Mock()
+    provider.client.base_url = "https://sddc.example.test:8243"
+    monkeypatch.setattr(execution, "_provider", lambda **kw: provider)
+    orch = execution._orch(None, "VCENTER", "9.1.2-25930306")
+    assert orch.checkpoint_file == "/cache/sddc.example.test-VCENTER-9.1.2-25930306.json"
+    # An explicit file, or one from the pillar, still wins.
+    assert execution._orch("/x.json", "VCENTER", "1").checkpoint_file == "/x.json"
+    opts["pillar"] = {"saltext.vcf": {"vcf_upgrade": {"checkpoint_file": "/p.json"}}}
+    assert execution._orch(None, "VCENTER", "1").checkpoint_file == "/p.json"
+    # Calls with no component/target keep the legacy shared name.
+    opts["pillar"] = {}
+    assert execution._orch().checkpoint_file == "/cache/vcf-upgrade.json"
