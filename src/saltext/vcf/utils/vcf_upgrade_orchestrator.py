@@ -28,7 +28,7 @@ from saltext.vcf.utils.vcf_upgrade_transport import boolean
 from saltext.vcf.utils.vcf_upgrade_transport import poll_settings
 
 # Fixed execution order for a multi-component sequence, whatever order the caller lists.
-COMPONENT_ORDER = ("SDDC_MANAGER", "NSX_T_MANAGER", "VCENTER", "HOST", "NSX_EDGE")
+COMPONENT_ORDER = ("SDDC_MANAGER", "HCX", "NSX_T_MANAGER", "VCENTER", "HOST", "NSX_EDGE")
 
 # SDDC Manager services can restart right after an upgrade; retry read-only validation.
 HEALTH_RETRY_ATTEMPTS = 5

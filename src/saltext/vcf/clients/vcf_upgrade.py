@@ -27,7 +27,7 @@ FAIL_UPGRADE = {
 BUNDLE_TERMINAL = {"SUCCESSFUL", "FAILED", "CANCELLED"}
 
 
-COMPONENTS = {"SDDC_MANAGER", "NSX_T_MANAGER", "NSX_EDGE", "VCENTER", "HOST"}
+COMPONENTS = {"SDDC_MANAGER", "HCX", "NSX_T_MANAGER", "NSX_EDGE", "VCENTER", "HOST"}
 # NSX_EDGE is a sequence/user-facing component; SDDC Manager upgrades it through the NSX bundle.
 API_COMPONENT = {"NSX_EDGE": "NSX_T_MANAGER"}
 
@@ -71,6 +71,12 @@ def _component(value):
 def _api_component(value):
     value = _component(value)
     return API_COMPONENT.get(value, value)
+
+
+def _bundle_types(bundle):
+    """Component types of a bundle; also accepts ``softwareType`` and the bundle-level type."""
+    types = {c.get("type") or c.get("softwareType") for c in bundle.get("components", [])}
+    return types | {bundle.get("bundleType")}
 
 
 def _id(value, name):
@@ -141,7 +147,7 @@ class VcfUpgradeProvider:
         bundles = self.client.elements("/v1/bundles")
         matches = {}
         for b in bundles:
-            if component_type not in [c.get("type") for c in b.get("components", [])]:
+            if component_type not in _bundle_types(b):
                 continue
             if not _version_match(release_version, b.get("version")):
                 continue
@@ -194,11 +200,22 @@ class VcfUpgradeProvider:
         bundles = self.client.elements("/v1/bundles")
         matches = []
         for b in bundles:
-            if component_type not in [c.get("type") for c in b.get("components", [])]:
+            if component_type not in _bundle_types(b):
                 continue
             if not _version_match(target_version, b.get("version")):
                 continue
             matches.append(b)
+        if component_type == "HCX":
+            # Each HCX release is listed as an INSTALL and a PATCH (upgrade) bundle with the
+            # same version; only the PATCH one can be used to upgrade.
+            matches = [
+                b
+                for b in matches
+                if any(
+                    c.get("imageType") == "PATCH" and c.get("type") == "HCX"
+                    for c in b.get("components", [])
+                )
+            ]
         versions = {b.get("version") for b in matches}
         if len(versions) > 1:
             raise CommandExecutionError(
@@ -536,7 +553,7 @@ class VcfUpgradeProvider:
         component_type = _api_component(component_type)
         b = self.client.get(f"/v1/bundles/{_id(bundle_id, 'bundle_id')}")
         for c in b.get("components", []):
-            if c.get("type") == component_type:
+            if component_type in {c.get("type"), c.get("softwareType")}:
                 if c.get("toVersion"):
                     return c["toVersion"]
         raise CommandExecutionError(
@@ -544,7 +561,7 @@ class VcfUpgradeProvider:
         )
 
     def _precheck_resource_id(self, domain_id, component_type):
-        if component_type == "HOST":
+        if component_type in {"HOST", "HCX"}:
             return None
         if component_type == "SDDC_MANAGER":
             managers = [
@@ -755,6 +772,10 @@ class VcfUpgradeProvider:
                 for x in self.client.elements("/v1/sddc-managers")
                 if (x.get("domain") or {}).get("id") == domain_id
             ]
+        elif component_type == "HCX":
+            # No SDDC Manager inventory endpoint is known for HCX: check only domain health.
+            items = [domain]
+            check_version = False
         elif component_type == "NSX_T_MANAGER":
             rid = _id((domain.get("nsxtCluster") or {}).get("id"), "NSX cluster id")
             items = [self.client.get(f"/v1/nsxt-clusters/{rid}")]

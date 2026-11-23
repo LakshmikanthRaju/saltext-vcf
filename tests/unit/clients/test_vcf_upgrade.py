@@ -300,6 +300,25 @@ def test_vcenter_rdu_invalid_network_options(provider, options):
         _rdu_payload(provider, **options)
 
 
+def test_hcx_uses_patch_bundle_not_install(provider):
+    def bundle(bundle_id, image_type, status):
+        return {
+            "id": bundle_id,
+            "version": "9.2.0-25892579",
+            "downloadStatus": status,
+            "components": [
+                {"type": "HCX", "imageType": image_type, "toVersion": "9.2.0.0.25892579"}
+            ],
+        }
+
+    provider.client.elements.return_value = [
+        bundle("patch", "PATCH", "PENDING"),
+        bundle("install", "INSTALL", "SUCCESSFUL"),
+    ]
+    assert provider.find_bundle("HCX", "9.2.0-25892579")["id"] == "patch"
+    assert provider.find_bundle("HCX", "9.2.0-25892579", "SUCCESSFUL") is None
+
+
 def test_nsx_edge_payload_is_edge_only(provider):
     provider.client.get.return_value = {"nsxtCluster": {"vipFqdn": "nsx.test"}}
     payload = provider.build_upgrade_payload("domain-1", "bundle-1", "9.1.0-123", "NSX_EDGE")
